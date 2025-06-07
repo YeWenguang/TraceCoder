@@ -3,7 +3,7 @@ import re
 import ast
 from typing import Tuple, Any, List
 import torch
-from openai import OpenAI
+from openai import OpenAI, APIError, Timeout, RateLimitError # 假设这些是相关的异常
 from transformers import AutoTokenizer
 
 # 导入同级模块的函数
@@ -92,16 +92,25 @@ def call_api(prompt, model, max_tokens_response=4096):
                  "content": "You are a helpful assistant specialized in code generation and debugging."},
                 {"role": "user", "content": prompt}
             ],
-            # max_tokens=max_tokens_response, # Deepseek/Qwen可能不支持此参数
-            temperature=0.2,  # 降低温度以获得更确定的输出
+            temperature=0.2,
         )
         result_text = response.choices[0].message.content
         prompt_tokens = response.usage.prompt_tokens if response.usage else 0
         completion_tokens = response.usage.completion_tokens if response.usage else 0
-        time.sleep(1)  # 调整API调用间隔
+        time.sleep(1)
         return result_text, prompt_tokens, completion_tokens
-    except Exception as e:
-        print(f"调用API时出错：{e}")
+    except RateLimitError as e:
+        logger.warning(f"API速率限制错误: {e}. 可能需要等待更长时间后重试。") # 假设 logger 已配置
+        # 这里可以加入更长的等待时间或特定的重试策略
+        return None, 0, 0
+    except APIError as e:
+        logger.error(f"API调用时发生错误: {e}")
+        return None, 0, 0
+    except Timeout as e:
+        logger.error(f"API调用超时: {e}")
+        return None, 0, 0
+    except Exception as e: # 捕获其他所有未预料到的异常
+        logger.error(f"调用API时发生未知错误：{e}")
         return None, 0, 0
 
 

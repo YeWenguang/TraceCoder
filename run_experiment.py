@@ -6,7 +6,8 @@ from tqdm import tqdm
 # 导入我们拆分出去的模块
 from config import setup_arg_parser, DATASET_PATHS
 from reporting import save_results, print_summary
-from problem_processor import process_problem
+# 从 problem_processor 导入 process_problem 和 _load_check_correctness_func
+from problem_processor import process_problem, _load_check_correctness_func
 from src.dataset_loader import load_dataset
 
 
@@ -33,6 +34,14 @@ def main():
         print(f"加载数据集时出错: {e}")
         sys.exit(1)
 
+    # <<< 新增代码：加载 check_correctness 函数 >>>
+    try:
+        check_correctness_func = _load_check_correctness_func(args.dataset)
+    except (ValueError, ImportError) as e:
+        print(f"加载评估函数 check_correctness 时出错: {e}")
+        sys.exit(1)
+    # <<< 结束新增代码 >>>
+
     print(f"--- 实验开始: {EXPERIMENT_ID} ---")
     print(f"参数: {vars(args)}")
 
@@ -49,7 +58,8 @@ def main():
     # 5. 主循环
     try:
         for task_id in tqdm(problem_iterator, total=(end_index - start_index), desc="处理问题"):
-            problem_result = process_problem(datasets[task_id], task_id, args)
+            # 将加载的 check_correctness_func 传递下去
+            problem_result = process_problem(datasets[task_id], task_id, args, check_correctness_func)
             results_data.append(problem_result)
     except KeyboardInterrupt:
         print("\n检测到手动中断。正在保存已有结果...")

@@ -3,10 +3,19 @@ import argparse
 # --- 数据集路径配置 ---
 # 请将这里的路径修改为你本地的实际文件路径
 DATASET_PATHS = {
-    "human_eval": "./datasets/human_eval/human_eval_problems.jsonl", # 请替换为实际本地路径
-    "BigCodeBench": "./datasets/BigCodeBench/BigCodeBench.jsonl",   # 请替换为实际本地路径
-    "ClassEval": "./datasets/ClassEval/ClassEval_problems.jsonl",      # 请替换为实际本地路径
-    # Add other datasets here
+    "humaneval": { # 'human_eval' 键名已更改为 'humaneval' 以匹配 argparse choices
+        "data_path": "./datasets/human_eval/human_eval_problems.jsonl", # 请替换为实际本地路径
+        "eval_module": "datasets.human_eval.execution" # 评估模块的Python导入路径
+    },
+    "bigcodebench": {
+        "data_path": "./datasets/BigCodeBench/BigCodeBench.jsonl",   # 请替换为实际本地路径
+        "eval_module": "datasets.BigCodeBench.evaluation" # 评估模块的Python导入路径
+    },
+    "classeval": { # 新增 ClassEval 的 eval_module
+        "data_path": "./datasets/ClassEval/ClassEval_problems.jsonl",      # 请替换为实际本地路径
+        "eval_module": "datasets.ClassEval.evaluation" # 评估模块的Python导入路径
+    }
+    # Add other datasets here, ensure they have 'data_path' and 'eval_module'
 }
 
 # 注意：请确保上述路径指向您本地存储数据集文件的实际位置。
@@ -22,7 +31,8 @@ def setup_arg_parser():
     """
     parser = argparse.ArgumentParser(description="运行代码生成和修复实验的框架")
     parser.add_argument('-m', '--model', type=str, default='gemini-1.5-flash-latest', help='要使用的模型名称')
-    parser.add_argument('-d', '--dataset', type=str, required=True, choices=['humaneval', 'bigcodebench'], help='要使用的数据集')
+    # 更新 choices 以匹配 DATASET_PATHS 中的键
+    parser.add_argument('-d', '--dataset', type=str, required=True, choices=list(DATASET_PATHS.keys()), help='要使用的数据集')
     parser.add_argument('--no-instrumentation', action='store_true', help='禁用代码插桩步骤')
     parser.add_argument('--no-two-step-repair', action='store_true', help='禁用两步修复流程，使用单步修复')
     parser.add_argument('--start-index', type=int, default=0, help='数据集中开始处理问题的索引')

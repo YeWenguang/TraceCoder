@@ -1,14 +1,14 @@
 import re
 import time
 from itertools import islice
+import importlib 
+from typing import Callable 
 
 # 导入同级模块的函数
-from config import check_correctness
+from config import DATASET_PATHS 
 from reporting import format_check_correctness_result
-
-# 导入src目录下的模块
-from src.generation import generator
-from src.code_executor import execute_code_and_capture_prints_last
+from src.generation import generator 
+from src.traceRunner import execute_code_and_capture_prints_last # <<< 新增导入
 
 
 # --- 辅助函数 ---
@@ -172,18 +172,35 @@ CODE:
 END_CODE
 """
 
+def _load_check_correctness_func(dataset_name: str) -> Callable:
+    """
+    根据数据集名称动态加载并返回相应的 check_correctness 函数。
+    """
+    try:
+        module_path = DATASET_PATHS[dataset_name]["eval_module"]
+        eval_module = importlib.import_module(module_path)
+        check_correctness_func = getattr(eval_module, "check_correctness")
+        return check_correctness_func
+    except KeyError:
+        raise ValueError(f"Dataset '{dataset_name}' not found in DATASET_PATHS in config.py.")
+    except AttributeError:
+        raise ImportError(f"'check_correctness' function not found in module '{module_path}'.")
+    except ImportError as e:
+        raise ImportError(f"Could not import evaluation module '{module_path}': {e}. Ensure __init__.py files exist in package directories.")
+
 
 # --- 核心处理函数 ---
-def _run_direct_generation(problem_data, args):
+def _run_direct_generation(problem_data, args, check_correctness_func_param: Callable): # 新增参数
     """执行第一阶段：直接代码生成和评估。"""
     prompt = problem_data.get('complete_prompt', '')
     generated_code, p_tokens, c_tokens = generator(prompt, "code3_generate", args.model)
-    eval_result = check_correctness(problem_data, generated_code, args.timeout)
+    # 使用传递进来的函数
+    eval_result = check_correctness_func_param(problem_data, generated_code, args.timeout)
     return {"code": generated_code, "eval_result": eval_result, "prompt_tokens": p_tokens,
             "completion_tokens": c_tokens}
 
 
-def _run_self_debugging(initial_code, initial_eval, problem_data, args):
+def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_correctness_func_param: Callable): # 新增参数
     """执行第二阶段：自调试循环 (已更新，包含完整逻辑)。"""
     code_to_debug, last_eval, best_code, best_eval = initial_code, initial_eval, initial_code, initial_eval
     log, history, p_tokens, c_tokens, streak = [], [], 0, 0, 0
@@ -233,7 +250,7 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args):
             print("LLM 未提供有效代码，终止调试。");
             break
 
-        eval_candidate = check_correctness(problem_data, candidate_code, args.timeout)
+        eval_candidate = check_correctness_func_param(problem_data, candidate_code, args.timeout) # 使用传递进来的函数
         print(f"候选修复结果: {format_check_correctness_result(eval_candidate)}")
 
         attempt_log = {"attempt": attempt, "plan": plan, "eval_result": eval_candidate}
@@ -258,12 +275,12 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args):
 
 
 # `process_problem` 函数保持不变，因为它只是调用上面的核心函数
-def process_problem(problem_data, task_id, args):
+def process_problem(problem_data, task_id, args, check_correctness_func_param: Callable): # 新增参数
     # (此函数无需修改，从上一版本复制即可)
     print(f"\n{'=' * 25} 正在处理问题: {task_id} {'=' * 25}")
     start_time = time.time()
 
-    gen_res = _run_direct_generation(problem_data, args)
+    gen_res = _run_direct_generation(problem_data, args, check_correctness_func_param) # 传递参数
 
     result = {
         "task_id": task_id, "model": args.model, "dataset": args.dataset,
@@ -281,7 +298,7 @@ def process_problem(problem_data, task_id, args):
                        "stopped_reason": "Passed on direct generation"})
     else:
         print("直接生成失败，进入自调试阶段。")
-        debug_res = _run_self_debugging(gen_res["code"], gen_res["eval_result"], problem_data, args)
+        debug_res = _run_self_debugging(gen_res["code"], gen_res["eval_result"], problem_data, args, check_correctness_func_param) # 传递参数
         result.update({
             "final_code": debug_res["final_code"], "final_eval": debug_res["final_eval"],
             "final_passed": debug_res["final_eval"].get("passed", False),
