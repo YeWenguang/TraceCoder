@@ -13,8 +13,8 @@ from .postprocessing import extract_python_code
 # 注意: 将API密钥和base_url等敏感信息外部化(例如，通过环境变量或配置文件)是最佳实践。
 # 为了简化，我们暂时保留在这里，但在生产环境中应修改。
 client = OpenAI(
-    api_key="your_api_key_here",  # 示例: "ywg12345678" or os.getenv("MY_API_KEY")
-    base_url="https://speedaye-gemini.hf.space/v1"  # 示例
+    api_key="ywg12345678",  
+    base_url="https://speedaye-gemini.hf.space/v1"  
 )
 
 

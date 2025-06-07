@@ -30,7 +30,7 @@ def setup_arg_parser():
     设置和解析命令行参数。
     """
     parser = argparse.ArgumentParser(description="运行代码生成和修复实验的框架")
-    parser.add_argument('-m', '--model', type=str, default='gemini-1.5-flash-latest', help='要使用的模型名称')
+    parser.add_argument('-m', '--model', type=str, default='gemini-2.5-flash-preview-04-17', help='要使用的模型名称')
     # 更新 choices 以匹配 DATASET_PATHS 中的键
     parser.add_argument('-d', '--dataset', type=str, required=True, choices=list(DATASET_PATHS.keys()), help='要使用的数据集')
     parser.add_argument('--no-instrumentation', action='store_true', help='禁用代码插桩步骤')
