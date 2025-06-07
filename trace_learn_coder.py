@@ -29,9 +29,14 @@ def main():
         sys.exit(1)
 
     try:
-        datasets = load_dataset(args.dataset, DATASET_PATHS[args.dataset])
+        # 从 DATASET_PATHS[args.dataset] 字典中获取 'data_path'
+        actual_dataset_path = DATASET_PATHS[args.dataset]["data_path"]
+        datasets = load_dataset(args.dataset, actual_dataset_path)
     except (FileNotFoundError, ValueError) as e:
         print(f"加载数据集时出错: {e}")
+        sys.exit(1)
+    except KeyError: # 新增 KeyErorr 捕获，以防 "data_path" 键不存在
+        print(f"错误: 数据集 '{args.dataset}' 的配置中缺少 'data_path'。请检查 config.py。")
         sys.exit(1)
 
     # <<< 新增代码：加载 check_correctness 函数 >>>
