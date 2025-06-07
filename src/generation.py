@@ -5,6 +5,7 @@ from typing import Tuple, Any, List
 import torch
 from openai import OpenAI, APIError, Timeout, RateLimitError # 假设这些是相关的异常
 from transformers import AutoTokenizer
+import logging # 新增导入
 
 # 导入同级模块的函数
 from .postprocessing import extract_python_code
@@ -13,9 +14,14 @@ from .postprocessing import extract_python_code
 # 注意: 将API密钥和base_url等敏感信息外部化(例如，通过环境变量或配置文件)是最佳实践。
 # 为了简化，我们暂时保留在这里，但在生产环境中应修改。
 client = OpenAI(
-    api_key="ywg12345678",  
-    base_url="https://speedaye-gemini.hf.space/v1"  
+    api_key="your_api_key_here",  # 示例: "ywg12345678" or os.getenv("MY_API_KEY")
+    base_url="https://speedaye-gemini.hf.space/v1"  # 示例
 )
+
+# 配置logger (新增)
+logger = logging.getLogger(__name__)
+# 您可以根据需要添加更详细的日志配置，例如设置日志级别和格式:
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 # --- 内联辅助函数提升为顶级函数 ---
@@ -97,20 +103,20 @@ def call_api(prompt, model, max_tokens_response=4096):
         result_text = response.choices[0].message.content
         prompt_tokens = response.usage.prompt_tokens if response.usage else 0
         completion_tokens = response.usage.completion_tokens if response.usage else 0
-        time.sleep(1)
+        time.sleep(1) # 每次成功调用后等待1秒
         return result_text, prompt_tokens, completion_tokens
     except RateLimitError as e:
-        logger.warning(f"API速率限制错误: {e}. 可能需要等待更长时间后重试。") # 假设 logger 已配置
+        logger.warning(f"API速率限制错误: {e}. 可能需要等待更长时间后重试。") # logger 现在已定义
         # 这里可以加入更长的等待时间或特定的重试策略
         return None, 0, 0
     except APIError as e:
-        logger.error(f"API调用时发生错误: {e}")
+        logger.error(f"API调用时发生错误: {e}") # logger 现在已定义
         return None, 0, 0
     except Timeout as e:
-        logger.error(f"API调用超时: {e}")
+        logger.error(f"API调用超时: {e}") # logger 现在已定义
         return None, 0, 0
     except Exception as e: # 捕获其他所有未预料到的异常
-        logger.error(f"调用API时发生未知错误：{e}")
+        logger.error(f"调用API时发生未知错误：{e}") # logger 现在已定义
         return None, 0, 0
 
 

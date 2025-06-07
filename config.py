@@ -4,15 +4,19 @@ import argparse
 # 请将这里的路径修改为你本地的实际文件路径
 DATASET_PATHS = {
     "humaneval": { # 'human_eval' 键名已更改为 'humaneval' 以匹配 argparse choices
-        "data_path": "./datasets/human_eval/human_eval_problems.jsonl", # 请替换为实际本地路径
+        "data_path": "./datasets/human_eval/data/test.jsonl", # 请替换为实际本地路径
+        "eval_module": "datasets.human_eval.execution" # 评估模块的Python导入路径
+    },
+    "humanevalplus": {
+        "data_path": "./datasets/human_eval_plus/data/test-00000-of-00001-5973903632b82d40.parquet", # 请替换为实际本地路径
         "eval_module": "datasets.human_eval.execution" # 评估模块的Python导入路径
     },
     "bigcodebench": {
-        "data_path": "./datasets/BigCodeBench/BigCodeBench.jsonl",   # 请替换为实际本地路径
+        "data_path": "./datasets/BigCodeBench/data/v0.1.4-00000-of-00001.parquet",   # 请替换为实际本地路径
         "eval_module": "datasets.BigCodeBench.evaluation" # 评估模块的Python导入路径
     },
     "classeval": { # 新增 ClassEval 的 eval_module
-        "data_path": "./datasets/ClassEval/ClassEval_problems.jsonl",      # 请替换为实际本地路径
+        "data_path": "./datasets/ClassEval/data/test-00000-of-00001-5c45fa6e45572491.parquet",      # 请替换为实际本地路径
         "eval_module": "datasets.ClassEval.evaluation" # 评估模块的Python导入路径
     }
     # Add other datasets here, ensure they have 'data_path' and 'eval_module'
