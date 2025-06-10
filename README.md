@@ -29,7 +29,7 @@
   - 自动加载数据集配套的评估模块（`datasets/*/execution.py` 或 `evaluation.py`）验证代码正确性
 
 - **自调试流程**：
-  - 两步修复机制：直接生成 → 插桩分析 → LLM 修复（可通过 `--no-two-step-repair` 禁用）
+  - 三步修复机制：代码插桩 → 代码分析 → 代码修复
   - 支持调试尝试次数（`--max-debug-attempts`）、无改进阈值（`--max-no-improvement-streak`）等参数控制
 
 - **执行安全防护**：
