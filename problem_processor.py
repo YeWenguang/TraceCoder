@@ -9,23 +9,85 @@ from config import DATASET_PATHS
 from reporting import format_check_correctness_result
 from src.generation import generator 
 from src.traceRunner import execute_code_and_capture_prints_last # <<< 新增导入
+from src.postprocessing import remove_main_block # <<< 新增导入 for _parse_llm_response
 
 
 # --- 辅助函数 ---
 def _parse_llm_response(response_text: str) -> tuple[str, str, str]:
-    # (此函数保持不变)
-    plan_match = re.search(r"ANALYSIS:(.*?)END_ANALYSIS", response_text, re.DOTALL | re.IGNORECASE)
-    plan = plan_match.group(1).strip() if plan_match else "Plan not found."
+    """ 
+    从LLM的完整响应中解析出“分析”、“修复的代码部分”和“完整的代码”。 
+    LLM被指示以特定格式返回这三部分。 
+    """ 
+    plan = "计划未找到或LLM未解析。" 
+    repaired_part = ""  # 如果未找到，则为空字符串 
+    full_code = "" 
 
-    code_match = re.search(r"CODE:\s*```(?:python\n)?(.*?)\n```", response_text, re.DOTALL | re.IGNORECASE)
-    full_code = code_match.group(1).strip() if code_match else ""
-    if not full_code:
-        code_blocks = re.findall(r"```(?:python\n)?(.*?)\n```", response_text, re.DOTALL | re.IGNORECASE)
-        if code_blocks: full_code = code_blocks[-1].strip()
+    # 1. 解析 PLAN (ANALYSIS) 
+    plan_match = re.search(r"ANALYSIS:(.*?)END_ANALYSIS", response_text, re.DOTALL | re.IGNORECASE) 
+    if plan_match: 
+        plan = plan_match.group(1).strip() 
 
-    repaired_part_match = re.search(r"Repaired CODE Part:\s*```(?:python\n)?(.*?)\n```", response_text,
-                                    re.DOTALL | re.IGNORECASE)
-    repaired_part = repaired_part_match.group(1).strip() if repaired_part_match else "N/A"
+    # 2. 解析 Repaired CODE Part 
+    #    需要注意```python可能在Repaired CODE Part:的下一行 
+    repaired_part_match = re.search( 
+        r"Repaired CODE Part:\s*(?:```python\n(.*?)\n```|```(.*?)\n```|(.*?))\s*(?:CODE:|END_CODE|$)", response_text, 
+        re.DOTALL | re.IGNORECASE) 
+    if repaired_part_match: 
+        # group(1) 是 ```python ... ```, group(2)是 ``` ... ```, group(3) 是没有```但被CODE:或END_CODE或末尾截断的 
+        repaired_part = (repaired_part_match.group(1) or repaired_part_match.group(2) or repaired_part_match.group(
+            3) or "").strip() 
+
+    # 3. 解析 CODE (完整的代码) 
+    #    允许 CODE: 标记和 ```python 之间有可选的换行和空格 
+    full_code_match = re.search(r"CODE:\s*```python\n(.*?)\n```\s*(?:END_CODE|$)", response_text, 
+                                re.DOTALL | re.IGNORECASE) 
+    if not full_code_match:  # 尝试没有 END_CODE 的情况 
+        full_code_match = re.search(r"CODE:\s*```python\n(.*?)\n```", response_text, re.DOTALL | re.IGNORECASE) 
+    if not full_code_match:  # 尝试没有 python 标签的情况 
+        full_code_match = re.search(r"CODE:\s*```\n(.*?)\n```\s*(?:END_CODE|$)", response_text, 
+                                    re.DOTALL | re.IGNORECASE) 
+    if not full_code_match:  # 尝试没有 python 标签也没有 END_CODE 
+        full_code_match = re.search(r"CODE:\s*```\n(.*?)\n```", response_text, re.DOTALL | re.IGNORECASE) 
+
+    if full_code_match: 
+        full_code = full_code_match.group(1).strip() 
+    else:  # 如果严格格式未找到，尝试更宽松地从 "CODE:" 之后提取 
+        code_marker_match = re.search(r"CODE:(.*)", response_text, re.DOTALL | re.IGNORECASE) 
+        if code_marker_match: 
+            potential_code_section = code_marker_match.group(1).strip() 
+            # 再次尝试从中提取```python ... ``` 
+            inner_code_match = re.search(r"```python\n(.*?)\n```", potential_code_section, re.DOTALL) 
+            if not inner_code_match: inner_code_match = re.search(r"```(?:.*\n)?(.*?)\n```", potential_code_section, 
+                                                                  re.DOTALL) 
+
+            if inner_code_match: 
+                full_code = inner_code_match.group(1).strip() 
+            else:  # 否则，认为CODE:之后到END_CODE（如果存在）或末尾都是代码 
+                full_code = potential_code_section.replace("END_CODE", "").strip() 
+                if full_code.startswith("```python"): full_code = full_code[len("```python"):].strip() 
+                if full_code.startswith("```"): full_code = full_code[len("```"):].strip() 
+                if full_code.endswith("```"): full_code = full_code[:-len("```")].strip() 
+
+    # 后处理和健全性检查 
+    if not full_code and plan_match and "END_ANALYSIS" in response_text: 
+        full_code = "# LLM提供了分析，但没有可解析的完整代码块。" 
+    elif not full_code and not plan_match:  # 如果什么主要标记都没找到 
+        # 尝试把整个响应作为代码，如果它看起来像代码 
+        if "def " in response_text or "import " in response_text or "class " in response_text: 
+            full_code = response_text 
+            plan = "# 未找到明确的分析；整个响应被视为代码。" 
+            # repaired_part 保持空 
+        else:  # 否则，认为代码无效 
+            plan = response_text  # 整个响应可能是分析 
+            full_code = "# LLM响应中未找到可解析的完整代码。" 
+
+    if full_code and not full_code.startswith("# LLM"): 
+        full_code = remove_main_block(full_code) # 使用导入的 remove_main_block 
+        # full_code = remove_comments_and_docstrings(full_code) # 用户提供的代码中此行是注释掉的 
+        full_code = full_code.strip() 
+
+    # 如果repaired_part为空但full_code有效，可以尝试从full_code中“猜测”一个repaired_part 
+    # 但这比较复杂且可能不准确，暂时将其留空。LLM应明确提供。 
 
     return plan, repaired_part, full_code
 
