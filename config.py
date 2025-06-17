@@ -1,9 +1,8 @@
 import argparse
 
 # --- 数据集路径配置 ---
-# 请将这里的路径修改为你本地的实际文件路径
 DATASET_PATHS = {
-    "humaneval": { # 'human_eval' 键名已更改为 'humaneval' 以匹配 argparse choices
+    "humaneval": {
         "data_path": "./datasets/human_eval/data/test.jsonl", # 请替换为实际本地路径
         "eval_module": "datasets.human_eval.execution" # 评估模块的Python导入路径
     },
@@ -23,10 +22,6 @@ DATASET_PATHS = {
 }
 
 # 注意：请确保上述路径指向您本地存储数据集文件的实际位置。
-# 文件名 (e.g., human_eval_problems.jsonl) 也是示例，请根据您的实际文件名进行调整。
-
-# 评估函数 (check_correctness) 将在 problem_processor.py 中根据数据集动态加载和调用。
-# 因此，此处的占位符函数已被移除。
 
 
 def setup_arg_parser():
