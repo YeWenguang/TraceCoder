@@ -3,7 +3,7 @@ import re
 import ast
 from typing import Tuple, Any, List
 import torch
-from openai import OpenAI, APIError, Timeout, RateLimitError # 假设这些是相关的异常
+from openai import OpenAI, APIError, Timeout, RateLimitError 
 from transformers import AutoTokenizer
 import logging # 新增导入
 
@@ -11,14 +11,12 @@ import logging # 新增导入
 from .postprocessing import extract_python_code
 
 # --- OpenAI/兼容API的客户端配置 ---
-# 注意: 将API密钥和base_url等敏感信息外部化(例如，通过环境变量或配置文件)是最佳实践。
-# 为了简化，我们暂时保留在这里，但在生产环境中应修改。
 client = OpenAI(
-    api_key="your_api_key_here",  # 示例: "ywg12345678" or os.getenv("MY_API_KEY")
-    base_url="https://speedaye-gemini.hf.space/v1"  # 示例
+    api_key="your_api_key_here", 
+    base_url="your_base_url_here" 
 )
 
-# 配置logger (新增)
+# 配置logger
 logger = logging.getLogger(__name__)
 # 您可以根据需要添加更详细的日志配置，例如设置日志级别和格式:
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
