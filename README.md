@@ -73,7 +73,7 @@ pip install pandas transformers openai python-dotenv  # 包含数据集加载、
 
 修改 config.py 中的 DATASET_PATHS 字段，将各数据集的 data_path 替换为本地实际存储路径：
 ```python
-# config.py（关键配置片段）
+# config.py
 DATASET_PATHS = {
     "humaneval": {
         "data_path": "/your/local/path/human_eval/data/test.jsonl",  # 本地 HumanEval 测试集路径（JSONL）
@@ -94,7 +94,18 @@ DATASET_PATHS = {
 }
 ```
 
-### 3. 运行实验
+### 3. 配置数据集路径
+
+修改 src/generation.py 中的 OpenAI 字段，配置API：
+```python
+# --- OpenAI/兼容API的客户端配置 ---
+client = OpenAI(
+    api_key="your_api_key_here", 
+    base_url="your_base_url_here" 
+)
+```
+
+### 4. 运行实验
 
 ```bash
 # 基础运行（使用默认模型和 HumanEval 数据集）
