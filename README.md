@@ -1,7 +1,6 @@
 
 # TraceCoder  
-
-## 语言选择  
+  
 - [English](./README.md)  
 - [中文](./README_CN.md)  
 
