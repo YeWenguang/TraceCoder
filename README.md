@@ -1,4 +1,9 @@
-# TraceCoder
+
+# TraceCoder  
+
+## 语言选择  
+- [English](./README.md)  
+- [中文](./README_CN.md)  
 
 `TraceCoder` is a Python framework designed for conducting experiments in code generation and automated code repair. It enables the evaluation and enhancement of code generation and debugging techniques using various language models and datasets.
 
