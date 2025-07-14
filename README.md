@@ -47,13 +47,16 @@ A framework for code generation and self-debugging experiments, supporting evalu
 
 ## Experimental Results
 
-**Performance comparison (Pass@1, %) of TraceCoder against baseline methods on four benchmarks across different foundation models. "Ours" refers to our proposed TraceCoder. The best result in each setting is marked in bold. The value in parentheses indicates the absolute improvement (↑) over the second-best method.**
+**Performance comparison (Pass@1, %) of TraceCoder against the baseline (Direct) on four benchmarks across different foundation models. The value in parentheses indicates the absolute improvement (↑) brought by our method.**
 
 | Models | Methods | Humaneval | Humanevalplus | ClassEval | BigCodeBench-Complete | BigCodeBench-Instruct |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Gemini-2.5-Flash-0417 | **Ours** | **99.39 (↑ 0.61)** | **98.17 (↑ 1.83)** | **81.00 (↑ 20.00)** | **89.04 (↑ 10.97)** | **85.00 (↑ 13.95)** |
-| DeepSeek-V3-0324 | **Ours** | **98.78 (↑ 3.05)** | **96.34 (↑ 3.66)** | **78.00 (↑ 15.00)** | **88.33 (↑ 5.96)** | **83.77 (↑ 9.21)** |
-| Qwen-Plus-2025-01-25 | **Ours** | **96.34 (↑ 1.22)** | **93.90 (↑ 2.44)** | **63.00 (↑ 14.00)** | **71.93 (↑ 0.97)** | **68.60 (↑ 4.83)** |
+| \multirow{2}{*}{Gemini-2.5-Flash-0417} & Direct | 96.34 | 91.46 | 38.00 | 53.77 | 43.77 |
+| | **Ours** | **99.39 (↑ 2.05)** | **98.17 (↑ 6.71)** | **81.00 (↑ 43.00)** | **89.04 (↑ 35.27)** | **85.00 (↑ 41.23)** |
+| \multirow{2}{*}{DeepSeek-V3-0324} & Direct | 94.51 | 90.24 | 41.00 | 38.25 | 46.67 |
+| | **Ours** | **98.78 (↑ 4.27)** | **96.34 (↑ 6.10)** | **78.00 (↑ 37.00)** | **88.33 (↑ 50.08)** | **83.77 (↑ 37.10)** |
+| \multirow{2}{*}{Qwen-Plus-2025-01-25} & Direct | 90.85 | 86.59 | 31.00 | 50.09 | 41.49 |
+| | **Ours** | **96.34 (↑ 5.49)** | **93.90 (↑ 7.31)** | **63.00 (↑ 32.00)** | **71.93 (↑ 21.84)** | **68.60 (↑ 27.11)** |
 
 ---
 
