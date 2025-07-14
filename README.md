@@ -45,6 +45,18 @@ A framework for code generation and self-debugging experiments, supporting evalu
 
 ---
 
+## Experimental Results
+
+**Performance comparison (Pass@1, %) of TraceCoder against baseline methods on four benchmarks across different foundation models. "Ours" refers to our proposed TraceCoder. The best result in each setting is marked in bold. The value in parentheses indicates the absolute improvement (↑) over the second-best method.**
+
+| Models | Methods | Humaneval | Humanevalplus | ClassEval | BigCodeBench-Complete | BigCodeBench-Instruct |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Gemini-2.5-Flash-0417 | **Ours** | **99.39 (↑ 0.61)** | **98.17 (↑ 1.83)** | **81.00 (↑ 20.00)** | **89.04 (↑ 10.97)** | **85.00 (↑ 13.95)** |
+| DeepSeek-V3-0324 | **Ours** | **98.78 (↑ 3.05)** | **96.34 (↑ 3.66)** | **78.00 (↑ 15.00)** | **88.33 (↑ 5.96)** | **83.77 (↑ 9.21)** |
+| Qwen-Plus-2025-01-25 | **Ours** | **96.34 (↑ 1.22)** | **93.90 (↑ 2.44)** | **63.00 (↑ 14.00)** | **71.93 (↑ 0.97)** | **68.60 (↑ 4.83)** |
+
+---
+
 ## Directory Structure
 
 ```plaintext

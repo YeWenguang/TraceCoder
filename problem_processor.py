@@ -13,106 +13,103 @@ from src.postprocessing import remove_main_block # <<< 新增导入 for _parse_l
 
 
 # --- 辅助函数 ---
-def _parse_llm_response(response_text: str) -> tuple[str, str, str]:
+def _parse_llm_output(llm_response: str):
     """ 
-    从LLM的完整响应中解析出“分析”、“修复的代码部分”和“完整的代码”。 
-    LLM被指示以特定格式返回这三部分。 
+    Parses the LLM's response string to extract the repair plan and 
+    instrumentation suggestions. 
+    The function looks for specific start and end markers to delimit the sections.
+    It also cleans up common artifacts like surrounding whitespace and markdown 
+    code fences (e.g., ```python ... ```). 
+    Args: 
+        llm_response: The full string output from the language model. 
+    Returns: 
+        A tuple containing the extracted 'repair_plan' and 
+        'instrumentation_suggestions'. If a section is not found, 
+        its value will be None. 
     """ 
-    plan = "计划未找到或LLM未解析。" 
-    repaired_part = ""  # 如果未找到，则为空字符串 
-    full_code = "" 
-
-    # 1. 解析 PLAN (ANALYSIS) 
-    plan_match = re.search(r"ANALYSIS:(.*?)END_ANALYSIS", response_text, re.DOTALL | re.IGNORECASE) 
-    if plan_match: 
-        plan = plan_match.group(1).strip() 
-
-    # 2. 解析 Repaired CODE Part 
-    #    需要注意```python可能在Repaired CODE Part:的下一行 
-    repaired_part_match = re.search( 
-        r"Repaired CODE Part:\s*(?:```python\n(.*?)\n```|```(.*?)\n```|(.*?))\s*(?:CODE:|END_CODE|$)", response_text, 
-        re.DOTALL | re.IGNORECASE) 
-    if repaired_part_match: 
-        # group(1) 是 ```python ... ```, group(2)是 ``` ... ```, group(3) 是没有```但被CODE:或END_CODE或末尾截断的 
-        repaired_part = (repaired_part_match.group(1) or repaired_part_match.group(2) or repaired_part_match.group(
-            3) or "").strip() 
-
-    # 3. 解析 CODE (完整的代码) 
-    #    允许 CODE: 标记和 ```python 之间有可选的换行和空格 
-    full_code_match = re.search(r"CODE:\s*```python\n(.*?)\n```\s*(?:END_CODE|$)", response_text, 
-                                re.DOTALL | re.IGNORECASE) 
-    if not full_code_match:  # 尝试没有 END_CODE 的情况 
-        full_code_match = re.search(r"CODE:\s*```python\n(.*?)\n```", response_text, re.DOTALL | re.IGNORECASE) 
-    if not full_code_match:  # 尝试没有 python 标签的情况 
-        full_code_match = re.search(r"CODE:\s*```\n(.*?)\n```\s*(?:END_CODE|$)", response_text, 
-                                    re.DOTALL | re.IGNORECASE) 
-    if not full_code_match:  # 尝试没有 python 标签也没有 END_CODE 
-        full_code_match = re.search(r"CODE:\s*```\n(.*?)\n```", response_text, re.DOTALL | re.IGNORECASE) 
-
-    if full_code_match: 
-        full_code = full_code_match.group(1).strip() 
-    else:  # 如果严格格式未找到，尝试更宽松地从 "CODE:" 之后提取 
-        code_marker_match = re.search(r"CODE:(.*)", response_text, re.DOTALL | re.IGNORECASE) 
-        if code_marker_match: 
-            potential_code_section = code_marker_match.group(1).strip() 
-            # 再次尝试从中提取```python ... ``` 
-            inner_code_match = re.search(r"```python\n(.*?)\n```", potential_code_section, re.DOTALL) 
-            if not inner_code_match: inner_code_match = re.search(r"```(?:.*\n)?(.*?)\n```", potential_code_section, 
-                                                                  re.DOTALL) 
-
-            if inner_code_match: 
-                full_code = inner_code_match.group(1).strip() 
-            else:  # 否则，认为CODE:之后到END_CODE（如果存在）或末尾都是代码 
-                full_code = potential_code_section.replace("END_CODE", "").strip() 
-                if full_code.startswith("```python"): full_code = full_code[len("```python"):].strip() 
-                if full_code.startswith("```"): full_code = full_code[len("```"):].strip() 
-                if full_code.endswith("```"): full_code = full_code[:-len("```")].strip() 
-
-    # 后处理和健全性检查 
-    if not full_code and plan_match and "END_ANALYSIS" in response_text: 
-        full_code = "# LLM提供了分析，但没有可解析的完整代码块。" 
-    elif not full_code and not plan_match:  # 如果什么主要标记都没找到 
-        # 尝试把整个响应作为代码，如果它看起来像代码 
-        if "def " in response_text or "import " in response_text or "class " in response_text: 
-            full_code = response_text 
-            plan = "# 未找到明确的分析；整个响应被视为代码。" 
-            # repaired_part 保持空 
-        else:  # 否则，认为代码无效 
-            plan = response_text  # 整个响应可能是分析 
-            full_code = "# LLM响应中未找到可解析的完整代码。" 
-
-    if full_code and not full_code.startswith("# LLM"): 
-        full_code = remove_main_block(full_code) # 使用导入的 remove_main_block 
-        # full_code = remove_comments_and_docstrings(full_code) # 用户提供的代码中此行是注释掉的 
-        full_code = full_code.strip() 
-
-    # 如果repaired_part为空但full_code有效，可以尝试从full_code中“猜测”一个repaired_part 
-    # 但这比较复杂且可能不准确，暂时将其留空。LLM应明确提供。 
-
-    return plan, repaired_part, full_code
+    def extract_and_clean_section(text: str, start_marker: str, end_marker: str) -> str | None: 
+        """Helper function to extract content between two markers.""" 
+        # Use re.DOTALL to make '.' match newlines, which is crucial for multiline content. 
+        # Use a non-greedy match '.*?' to find the shortest possible block. 
+        pattern = re.compile(f"{re.escape(start_marker)}(.*?){re.escape(end_marker)}", re.DOTALL) 
+        match = pattern.search(text) 
+        if not match: 
+            return None 
+        # Extract the content from the first capturing group 
+        content = match.group(1) 
+        # Clean the extracted content: 
+        # 1. Remove leading/trailing whitespace and newlines. 
+        content = content.strip() 
+        # 2. Remove common markdown code fences if they exist. 
+        if content.startswith("```python"): 
+            content = content[len("```python"):].strip() 
+        if content.startswith("```"): 
+            content = content[len("```"):].strip() 
+        if content.endswith("```"): 
+            content = content[:-len("```")].strip() 
+        return content 
+ 
+    # Define the markers for each section 
+    repair_plan_start = "REPAIR_PLAN_START" 
+    repair_plan_end = "REPAIR_PLAN_END" 
+    suggestions_start = "Instrumentation_Suggestions_START" 
+    suggestions_end = "Instrumentation_Suggestions_END" 
+ 
+    # Extract each section using the helper function 
+    repair_plan = extract_and_clean_section(llm_response, repair_plan_start, repair_plan_end) 
+    instrumentation_suggestions = extract_and_clean_section(llm_response, suggestions_start, suggestions_end) 
+ 
+    return repair_plan, instrumentation_suggestions
 
 
 
-def _build_instrumentation_prompt(code_to_debug: str) -> str:
+def _build_instrumentation_prompt(code_to_debug_next: str, instrumentation_suggestions: str, failure_info_for_instrumentation: str) -> str:
     """构建用于代码插桩的提示。"""
-    return f"""The Python code below failed tests. Add `print()` statements to trace its execution and variable states, focusing on areas related to the 'Test Failure Feedback'.
-
-Key Instrumentation Rules:
-1.  Identify several logical blocks/steps in the code.
-2.  For each block/step, print:
-    *   Key inputs.
-    *   Key outputs/results.
-    *   Entry/exit of major functions/loops if helpful.
-3.  ONLY add print statements(Don't comment it out). DO NOT change the original code logic or fix errors.
-4.  Prints should be informative, like: `print(f"[BlockName] Input: {{var}}")`.
-
-Code to Instrument:
-```python
-{code_to_debug}
-```
-
-Please provide ONLY the instrumented Python code.
-"""
+    return f"""The Python code below failed tests. Add `print()` statements to trace its execution and variable states, focusing on areas related to the 'Test Failure Feedback'. 
+ 
+ Key Instrumentation Rules: 
+ 
+ 1.  Identify serveral logical blocks/steps in the code. 
+ 
+ 2.  For each block/step, print: 
+ 
+ *   Key inputs. 
+ 
+ *   Key outputs/results. 
+ 
+ *   Entry/exit of major functions/loops if helpful. 
+ 
+ 3.  ONLY add print statements(Don't comment it out). DO NOT change the original code logic or fix errors. 
+ 
+ 4.  Prints should be informative, like: `print(f"[BlockName] Input: {{var}}")`. 
+ 
+ Code to Instrument: 
+ 
+ ```python 
+ 
+ {code_to_debug_next} 
+ 
+ ``` 
+ 
+ Instrument suggestions: 
+ 
+ ``` 
+ 
+ {instrumentation_suggestions} 
+ 
+ ``` 
+ 
+ Feedback: 
+ 
+ ``` 
+ 
+ {failure_info_for_instrumentation} 
+ 
+ ``` 
+ 
+ Please provide ONLY the instrumented Python code. 
+ 
+ """
 
 
 def _get_failed_history_str(history: list) -> str:
@@ -132,36 +129,80 @@ def _get_failed_history_str(history: list) -> str:
     return "\n".join(formatted_failed_list)
 
 
-def _build_analysis_planning_prompt(problem_data, code_to_debug, captured_prints, history) -> str:
+def _build_analysis_planning_prompt(problem_data, code_with_prints, captured_prints_output, history) -> str:
     """构建两步法中第一步（分析与规划）的提示。"""
-    failed_history_str = _get_failed_history_str(history)
-    return f"""You are a debugging assistant.
-Given the following information about a Python function that failed tests:
-
-1. Original Problem Description:
-```python
-{problem_data['complete_prompt']}
-```
-2. Code to Debug (this is the version before this repair attempt):
-```python
-{code_to_debug}
-```
-3. Captured Print Output and Execution Error Messages:
-```text
-{captured_prints}
-```
-4. MISTAKES TO AVOID:
-```
-{failed_history_str}
-```
-Your tasks are:
-Step 1. Analyze the `Captured Print Output` to pinpoint the bug(s).
-Step 2. Explain the root cause for each bug.
-Step 3. Review `MISTAKES TO AVOID` and explain how your new plan is different and better.
-Step 4. Propose a concise, step-by-step, actionable plan to fix the bug(s).
-
-Output your response as clear text. Focus on an actionable plan. Let's think step by step.
-"""
+    failed_attempts_feedback_str = _get_failed_history_str(history)
+    return f"""You are a debugging assistant. 
+ 
+ Given the following information about a Python function that failed tests: 
+ 
+ 1. Original Problem Description: 
+ 
+ ```python 
+ 
+ {problem_data['complete_prompt']} 
+ 
+ ``` 
+ 
+ 2. Instrumented Code (this version produced the prints and test feedback below): 
+ 
+ ```python 
+ 
+ {code_with_prints} 
+ 
+ ``` 
+ 
+ 3. Captured Print Output and Execution Error Messages (from executing the Instrumented Code with test cases): 
+ 
+ ```text 
+ 
+ {str(captured_prints_output)} 
+ 
+ ``` 
+ 
+ 4. MISTAKES TO AVOID (Review these previous failed attempts for this problem instance. Identify why they failed and how your current analysis suggests a different, better approach.): 
+ 
+ ``` 
+ 
+ {failed_attempts_feedback_str} 
+ 
+ ``` 
+ 
+ Your tasks are: 
+ 
+ Step 1. Analyze the `Captured Print Output` in conjunction with the `Instrumented Code` line-by-line to pinpoint the exact location and nature of the bug(s). 
+ 
+ Step 2. For each bug in `Execution Error Messages`, explain its root cause. 
+ 
+ Step 3. Review the `MISTAKES TO AVOID`. Analyze the reasons for each failed attempt, explicitly state what lessons are learned and how your new plan avoids repeating those errors. 
+ 
+ Step 4. Propose a concise, step-by-step, actionable plan to fix the bug(s) in the *original code structure*. 
+ 
+ Output your response as clear text, covering points A, B, C, and D. 
+ 
+ Your response MUST be in the specified format: 
+ 
+ REPAIR_PLAN_START 
+ 
+ ```python 
+ 
+ [give the repair plan] 
+ 
+ ``` 
+ 
+ REPAIR_PLAN_END 
+ 
+ Instrumentation_Suggestions_START 
+ 
+ ```python 
+ 
+ [Do not give the code] 
+ 
+ ``` 
+ 
+ Instrumentation_Suggestions_END 
+ 
+ """
 
 
 def _build_code_implementation_prompt(problem_data, code_to_fix, captured_prints, repair_plan) -> str:
@@ -198,41 +239,35 @@ END_CODE
 """
 
 
-def _build_one_step_repair_prompt(problem_data, code_to_fix, failure_feedback, captured_prints, history) -> str:
-    """构建单步修复的提示。"""
-    failed_history_str = _get_failed_history_str(history)
-    return f"""You are a debugging and code generation assistant. The following Python code failed tests.
+def _parse_implementation_output(response_text: str) -> str:
+    """
+    Parses the LLM's response from the implementation prompt to extract the full code.
+    This is a simplified parser for the "CODE:" block.
+    """
+    # Look for the CODE: block with ```python
+    full_code_match = re.search(r"CODE:\s*```python\n(.*?)\n```", response_text, re.DOTALL)
+    if full_code_match:
+        return full_code_match.group(1).strip()
+    
+    # Fallback for ``` without language tag
+    full_code_match = re.search(r"CODE:\s*```\n(.*?)\n```", response_text, re.DOTALL)
+    if full_code_match:
+        return full_code_match.group(1).strip()
 
-Original Problem:
-```python
-{problem_data['complete_prompt']}
-```
-Faulty Code to Fix:
-```python
-{code_to_fix}
-```
-Test Failure Feedback:
-```
-{failure_feedback}
-```
-Captured Print Output (if available):
-```text
-{captured_prints}
-```
-MISTAKES TO AVOID:
-```
-{failed_history_str}
-```
-Your response MUST be in the specified format:
-ANALYSIS:
-[Your brief analysis and plan here.]
-END_ANALYSIS
-CODE:
-```python
-[Your complete corrected Python code here.]
-```
-END_CODE
-"""
+    # Fallback for cases where the code block is not perfectly formatted but follows CODE:
+    code_marker_match = re.search(r"CODE:(.*)", response_text, re.DOTALL | re.IGNORECASE)
+    if code_marker_match:
+        potential_code = code_marker_match.group(1).strip()
+        # Clean up potential markdown fences that might still be there
+        if potential_code.startswith("```python"):
+            potential_code = potential_code[len("```python"):].strip()
+        if potential_code.startswith("```"):
+            potential_code = potential_code[len("```"):].strip()
+        if potential_code.endswith("```"):
+            potential_code = potential_code[:-len("```")].strip()
+        return potential_code
+
+    return "" # Return empty string if no code is found
 
 def _load_check_correctness_func(dataset_name: str) -> Callable:
     """
@@ -262,10 +297,11 @@ def _run_direct_generation(problem_data, args, check_correctness_func_param: Cal
             "completion_tokens": c_tokens}
 
 
-def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_correctness_func_param: Callable): # 新增参数
+def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_correctness_func_param: Callable):
     """执行第二阶段：自调试循环 (已更新，包含完整逻辑)。"""
     code_to_debug, last_eval, best_code, best_eval = initial_code, initial_eval, initial_code, initial_eval
     log, history, p_tokens, c_tokens, streak = [], [], 0, 0, 0
+    instrumentation_suggestions = ""  # Initialize suggestions
 
     for attempt in range(1, args.max_debug_attempts + 1):
         print(
@@ -273,39 +309,41 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
 
         # 1. 插桩
         captured_prints = "Instrumentation skipped or not applicable."
+        instrumented_code = code_to_debug  # Default to original if instrumentation fails
         if not args.no_instrumentation:
-            instr_prompt = _build_instrumentation_prompt(code_to_debug)
-            instrumented_code, p, c = generator(instr_prompt, "code3_generate", args.model)
+            failure_info = format_check_correctness_result(last_eval)
+            instr_prompt = _build_instrumentation_prompt(code_to_debug, instrumentation_suggestions, failure_info)
+            instrumented_code_gen, p, c = generator(instr_prompt, "code3_generate", args.model)
             p_tokens, c_tokens = p_tokens + p, c_tokens + c
 
-            if instrumented_code.strip():
+            if instrumented_code_gen.strip():
+                instrumented_code = instrumented_code_gen
                 exec_result = execute_code_and_capture_prints_last(
                     instrumented_code + "\n\n" + problem_data.get('test', ''), timeout_seconds=args.timeout)
                 captured_prints = exec_result.get('display_output', 'No instrumentation output captured.')
 
-        # 2. 调用LLM进行修复 (根据策略选择 prompt)
-        plan, candidate_code = "N/A", ""
+        # 2. 分析和规划 (This is now the unified first step)
+        analysis_prompt = _build_analysis_planning_prompt(problem_data, instrumented_code, captured_prints, history)
+        llm_response, p, c = generator(analysis_prompt, "code4_generate", args.model)
+        p_tokens, c_tokens = p_tokens + p, c_tokens + c
+        
+        repair_plan, instrumentation_suggestions = _parse_llm_output(llm_response)
+        candidate_code = ""
 
-        if not args.no_two_step_repair:
-            # 两步法
-            analysis_prompt = _build_analysis_planning_prompt(problem_data, code_to_debug, captured_prints, history)
-            plan, p, c = generator(analysis_prompt, "code4_generate", args.model)
-            p_tokens, c_tokens = p_tokens + p, c_tokens + c
-
-            if plan.strip():
-                impl_prompt = _build_code_implementation_prompt(problem_data, code_to_debug, captured_prints, plan)
-                # 使用 code4_generate 是因为原始脚本中修复也是用这个，它会返回结构化文本
-                llm_response, p, c = generator(impl_prompt, "code4_generate", args.model)
-                p_tokens, c_tokens = p_tokens + p, c_tokens + c
-                _, _, candidate_code = _parse_llm_response(llm_response)
+        # 3. 代码实现 (This is the unified second step, skipped if no plan)
+        if repair_plan and repair_plan.strip():
+            # The two-step repair is now the default if a plan is returned.
+            # The `no_two_step_repair` flag is implicitly handled by whether a plan is generated.
+            impl_prompt = _build_code_implementation_prompt(problem_data, code_to_debug, captured_prints, repair_plan)
+            llm_response_impl, p_impl, c_impl = generator(impl_prompt, "code4_generate", args.model)
+            p_tokens, c_tokens = p_tokens + p_impl, c_tokens + c_impl
+            
+            candidate_code = _parse_implementation_output(llm_response_impl)
         else:
-            # 单步法
-            one_step_prompt = _build_one_step_repair_prompt(problem_data, code_to_debug,
-                                                            format_check_correctness_result(last_eval), captured_prints,
-                                                            history)
-            llm_response, p, c = generator(one_step_prompt, "code4_generate", args.model)
-            p_tokens, c_tokens = p_tokens + p, c_tokens + c
-            plan, _, candidate_code = _parse_llm_response(llm_response)
+            # If there's no repair plan, we can't proceed with implementation.
+            # This also handles the "one-step" case where the analysis prompt might not return a plan.
+            print("LLM 未提供修复计划，终止调试。")
+            break
 
         # 3. 评估和决策
         if not candidate_code.strip():
