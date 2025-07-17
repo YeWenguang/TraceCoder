@@ -3,26 +3,26 @@ import re
 import ast
 from typing import Tuple, Any, List
 import torch
-from openai import OpenAI, APIError, Timeout, RateLimitError 
+from openai import OpenAI, APIError, Timeout, RateLimitError
 from transformers import AutoTokenizer
-import logging # 新增导入
+import logging # Added import
 
-# 导入同级模块的函数
+# Import function from a sibling module
 from .postprocessing import extract_python_code
 
-# --- OpenAI/兼容API的客户端配置 ---
+# --- OpenAI/Compatible API Client Configuration ---
 client = OpenAI(
-    api_key="your_api_key_here", 
-    base_url="your_base_url_here" 
+    api_key="your_api_key_here",
+    base_url="your_base_url_here"
 )
 
-# 配置logger
+# Configure logger
 logger = logging.getLogger(__name__)
-# 您可以根据需要添加更详细的日志配置，例如设置日志级别和格式:
+# You can add more detailed logging configuration as needed, for example, setting the log level and format:
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-# --- 内联辅助函数提升为顶级函数 ---
+# --- Promoted inline helper functions to top-level functions ---
 
 def get_split_point_after_last_return(code_string: str) -> int:
     try:
@@ -86,7 +86,7 @@ def extract_python_code_with_logic(text: str, remove_main: bool = True, remove_p
     return "\n\n".join(processed_code_blocks).strip()
 
 
-# --- API 调用函数 ---
+# --- API Call Function ---
 def call_api(prompt, model, max_tokens_response=4096):
     try:
         response = client.chat.completions.create(
@@ -101,32 +101,32 @@ def call_api(prompt, model, max_tokens_response=4096):
         result_text = response.choices[0].message.content
         prompt_tokens = response.usage.prompt_tokens if response.usage else 0
         completion_tokens = response.usage.completion_tokens if response.usage else 0
-        time.sleep(1) # 每次成功调用后等待1秒
+        time.sleep(1) # Wait for 1 second after each successful call
         return result_text, prompt_tokens, completion_tokens
     except RateLimitError as e:
-        logger.warning(f"API速率限制错误: {e}. 可能需要等待更长时间后重试。") # logger 现在已定义
-        # 这里可以加入更长的等待时间或特定的重试策略
+        logger.warning(f"API rate limit error: {e}. May need to wait longer before retrying.") # logger is now defined
+        # A longer wait time or a specific retry strategy can be added here
         return None, 0, 0
     except APIError as e:
-        logger.error(f"API调用时发生错误: {e}") # logger 现在已定义
+        logger.error(f"An error occurred during the API call: {e}") # logger is now defined
         return None, 0, 0
     except Timeout as e:
-        logger.error(f"API调用超时: {e}") # logger 现在已定义
+        logger.error(f"API call timed out: {e}") # logger is now defined
         return None, 0, 0
-    except Exception as e: # 捕获其他所有未预料到的异常
-        logger.error(f"调用API时发生未知错误：{e}") # logger 现在已定义
+    except Exception as e: # Catch all other unexpected exceptions
+        logger.error(f"An unknown error occurred when calling the API: {e}") # logger is now defined
         return None, 0, 0
 
 
-# --- 主生成器函数 ---
+# --- Main Generator Function ---
 def generator(text: str, status: str, model_name: str, models=None, tokenizers=None) -> Tuple[Any, int, int]:
     """
-    根据状态(status)调用不同的模型或API来生成内容。
-    返回: (生成的内容, prompt_tokens, completion_tokens)
+    Calls different models or APIs to generate content based on the status.
+    Returns: (generated content, prompt_tokens, completion_tokens)
     """
-    # 如果提供了本地模型 (models) 和分词器 (tokenizers)
+    # If local models and tokenizers are provided
     if models and tokenizers:
-        # 此处保留本地模型生成逻辑
+        # Local model generation logic is preserved here
         messages = [{"role": "user", "content": text}]
         inputs = tokenizers.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(
             models.device)
@@ -139,12 +139,12 @@ def generator(text: str, status: str, model_name: str, models=None, tokenizers=N
 
         if status == "code1_generate":
             generation = extract_python_code_with_logic(generation)
-        # 可以为本地模型添加更多status的处理逻辑
+        # More status handling logic can be added for local models
 
         torch.cuda.empty_cache()
         return generation, prompt_tokens, completion_tokens
 
-    # 如果使用API模型
+    # If using an API model
     else:
         max_retries = 5
         retry_count = 0
@@ -153,27 +153,27 @@ def generator(text: str, status: str, model_name: str, models=None, tokenizers=N
             raw_generation, p_tokens, c_tokens = call_api(prompt=text, model=model_name)
 
             if raw_generation is not None:
-                # 根据status对原始输出进行后处理
+                # Post-process the raw output based on the status
                 if status in ["code3_generate", "code5_generate"]:
                     processed_generation = extract_python_code(raw_generation)
                     print(f"################# PROCESSED ({status}) #################\n{processed_generation}")
                     return processed_generation, p_tokens, c_tokens
 
                 elif status in ["code4_generate", "code6_generate"]:
-                    # 这些状态需要返回原始的、包含分析和代码的文本
+                    # These statuses need to return the original text containing analysis and code
                     print(f"################# RAW ({status}) #################\n{raw_generation}")
                     return raw_generation, p_tokens, c_tokens
 
                 else:
-                    # 默认行为：返回原始文本
+                    # Default behavior: return the raw text
                     return raw_generation, p_tokens, c_tokens
 
             retry_count += 1
-            print(f"API调用失败，正在重试... (尝试 {retry_count}/{max_retries})")
+            print(f"API call failed, retrying... (Attempt {retry_count}/{max_retries})")
             if retry_count < max_retries:
                 time.sleep(5)
 
-        # 所有重试失败
-        error_message = f"错误: 在 {max_retries} 次重试后API调用仍然失败 (status: '{status}')."
+        # All retries failed
+        error_message = f"Error: API call still failed after {max_retries} retries (status: '{status}')."
         print(error_message)
         return error_message, 0, 0
