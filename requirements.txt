@@ -2,3 +2,6 @@ pandas
 tqdm
 pebble
 litellm
+transformers
+openai
+python-dotenv
