@@ -4,20 +4,20 @@ import pandas as pd
 
 def load_dataset(dataset_name: str, dataset_path: str):
     """
-    根据数据集名称和路径加载数据集。
+    Loads a dataset based on its name and path.
     """
-    print(f"正在从路径加载数据集 '{dataset_name}': {dataset_path}")
+    print(f"Loading dataset '{dataset_name}' from path: {dataset_path}")
     if not os.path.exists(dataset_path):
-        raise FileNotFoundError(f"数据集文件未找到: {dataset_path}")
+        raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
 
     if dataset_name == 'bigcodebench':
         return load_parquet_dataset(dataset_path)
     elif dataset_name == 'humaneval':
-        # HumanEval通常是一个jsonl文件
+        # HumanEval is typically a jsonl file
         return load_jsonl_dataset(dataset_path)
-    # 此处可以添加更多数据集类型的加载逻辑
+    # More dataset loading logic can be added here
     else:
-        raise ValueError(f"不支持的数据集名称: {dataset_name}")
+        raise ValueError(f"Unsupported dataset name: {dataset_name}")
 
 def load_jsonl_dataset(path):
     datasets_dict = {}
@@ -26,13 +26,13 @@ def load_jsonl_dataset(path):
             data = json.loads(line)
             task_id = data.get('task_id', f"jsonl_task/{i}")
             data['task_id'] = task_id
-            # 确保关键字段存在
+            # Ensure key fields exist
             data.setdefault('entry_point', data.get('name', f'func_{i}'))
-            data.setdefault('prompt', data.get('signature', f"def {data['entry_point']}():\n pass"))
+            data.setdefault('prompt', data.get('signature', f"def {data['entry_point']}():\n    pass"))
             data.setdefault('test', data.get('tests', "assert True # Dummy test"))
             data.setdefault('complete_prompt', data.get('prompt') + data.get('docstring', ''))
             datasets_dict[task_id] = data
-    print(f"已从 {path} 加载 {len(datasets_dict)} 个问题")
+    print(f"Loaded {len(datasets_dict)} problems from {path}")
     return datasets_dict
 
 def load_parquet_dataset(path):
@@ -45,8 +45,8 @@ def load_parquet_dataset(path):
         task_id = data['task_id']
         data.setdefault('entry_point', data.get('name', f'func_{task_id.split("/")[-1]}'))
         data.setdefault('test', data.get('tests', "assert True # Dummy test"))
-        # BigCodeBench的'prompt'字段通常是完整的提示
+        # The 'prompt' field in BigCodeBench is usually the complete prompt
         data.setdefault('complete_prompt', data.get('prompt', ''))
         datasets_dict[task_id] = data
-    print(f"已从 {path} 加载 {len(datasets_dict)} 个问题")
+    print(f"Loaded {len(datasets_dict)} problems from {path}")
     return datasets_dict
