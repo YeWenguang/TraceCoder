@@ -2,29 +2,29 @@ import subprocess
 import tempfile
 import os
 import sys
-import time  # 显式导入 time 模块
+import time  # Explicitly import the time module
 import json
-import io  # 需要 io.StringIO
-import traceback  # 需要格式化异常信息
-import re  # 用于预处理代码字符串
+import io  # Required for io.StringIO
+import traceback  # Required for formatting exception information
+import re  # Used for preprocessing the code string
 
-# --- 要注入到用户代码中的辅助代码 ---
+# --- Helper code to be injected into the user's code ---
 HELPER_CODE_TEMPLATE = """
 import unittest
 import io
 import sys
 import json
 import traceback
-import os # 未直接使用，但对于更复杂的测试加载场景可能有用
+import os # Not used directly, but may be useful for more complex test loading scenarios
 
-# --- JSON结果标记，用于主进程解析 ---
+# --- JSON result markers for parsing by the main process ---
 JSON_RESULTS_START_MARKER = "---JSON_RESULTS_START---"
 JSON_RESULTS_END_MARKER = "---JSON_RESULTS_END---"
 
 class EnhancedTestResult(unittest.TestResult):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.results_data = [] # 存储每个测试的详细信息
+        self.results_data = [] # Stores detailed information for each test
         self._original_stdout = None
         self._original_stderr = None
         self._current_test_stdout = None
@@ -99,16 +99,18 @@ class EnhancedTestResult(unittest.TestResult):
         })
 
     def stopTest(self, test):
+        # Ensure streams are restored if the test exits early without error/failure
         if self._original_stdout is not None or self._original_stderr is not None :
              self._get_captured_outputs_and_restore_streams()
         super().stopTest(test)
 
 
 def run_tests_with_custom_result():
-    runner_stream = io.StringIO() 
+    runner_stream = io.StringIO()
     loader = unittest.TestLoader()
 
     try:
+        # Load tests from the main module where the user's code is executed
         suite = loader.loadTestsFromModule(sys.modules['__main__'])
     except Exception as e:
         # This error occurs if test loading itself fails
@@ -126,15 +128,17 @@ def run_tests_with_custom_result():
         return
 
     runner = unittest.TextTestRunner(stream=runner_stream, verbosity=2, resultclass=EnhancedTestResult)
-    result_object = runner.run(suite) 
+    result_object = runner.run(suite)
 
+    # Prepare the data to be output as JSON
     output_data = {
         "runner_summary": runner_stream.getvalue(),
-        "detailed_results": result_object.results_data 
+        "detailed_results": result_object.results_data
     }
 
-    sys.stdout.flush() 
-    print("\\n" + JSON_RESULTS_START_MARKER) 
+    # Print the JSON data to stdout, wrapped in markers for easy parsing
+    sys.stdout.flush()
+    print("\\n" + JSON_RESULTS_START_MARKER)
     json.dump(output_data, sys.stdout)
     print("\\n" + JSON_RESULTS_END_MARKER)
     sys.stdout.flush()
@@ -146,23 +150,27 @@ if __name__ == '__main__':
 
 def _preprocess_code_string_to_deactivate_main(code_string: str) -> str:
     """
-    尝试通过注释掉用户代码字符串中的 `unittest.main()` 调用来禁用它们，
-    以防止它们在我们自定义的运行器之前运行。
-    这是一种基于正则表达式的“尽力而为”的方法。
+    Attempts to disable `unittest.main()` calls in the user's code string by commenting them out,
+    preventing them from running before our custom runner.
+    This is a "best-effort" approach based on regex.
     """
     lines = code_string.splitlines()
     new_lines = []
     main_call_pattern = re.compile(r"^(\s*)unittest\.main\s*\(.*")
     for line in lines:
         stripped_line = line.lstrip()
+        # Preserve comments
         if stripped_line.startswith("#"):
             new_lines.append(line)
             continue
+
         match = main_call_pattern.match(line)
         if match:
             indent = match.group(1)
             original_call_line_content = line.strip()
+            # Comment out the original line and add a note
             new_lines.append(f"{indent}# original call: {original_call_line_content} # Disabled by execution wrapper")
+            # Add a pass statement in case the call was the only line in a block (e.g., inside an if)
             new_lines.append(f"{indent}pass # Placeholder in case the original call is the only statement in the block")
         else:
             new_lines.append(line)
@@ -183,7 +191,7 @@ def execute_code_and_capture_prints_last(
 
     Parameters:
     code_string (str): The Python code to execute (should contain unittest tests and
-                       typically an `if __name__=='__main__': unittest.main()` structure).
+                       typically an `if __name__=='__main__':` block).
     timeout_seconds (int): Timeout for the execution in seconds.
     n_last_lines (int, optional): If provided, only the last n lines of the combined
                                   display output will be returned. None or <=0 means all lines.
@@ -201,6 +209,7 @@ def execute_code_and_capture_prints_last(
     temp_file_path = None
     error_occurred_flag = False
 
+    # Initialize lists to hold different parts of the output
     module_stdout_pre_json_lines = []
     passed_tests_detail_lines = []
     failed_or_error_tests_detail_lines = []
@@ -209,15 +218,18 @@ def execute_code_and_capture_prints_last(
     module_stdout_post_json_lines = []
     execution_error_log_lines = []
 
+    # Preprocess the user code and append our helper code
     preprocessed_code_string = _preprocess_code_string_to_deactivate_main(code_string)
     full_code_to_execute = preprocessed_code_string + "\n\n" + HELPER_CODE_TEMPLATE
 
+    # Define markers for parsing JSON from the subprocess output
     raw_json_start_marker = "---JSON_RESULTS_START---"
     raw_json_end_marker = "---JSON_RESULTS_END---"
     actual_start_marker_in_stream = "\n" + raw_json_start_marker
     actual_end_marker_in_stream = "\n" + raw_json_end_marker
 
     try:
+        # Create a temporary file to run the code
         with tempfile.NamedTemporaryFile(mode="w+", suffix=".py", delete=False, encoding='utf-8') as fp:
             fp.write(full_code_to_execute)
             temp_file_path = fp.name
@@ -225,6 +237,7 @@ def execute_code_and_capture_prints_last(
         python_executable = sys.executable
         command = [python_executable, temp_file_path]
 
+        # Start the subprocess
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -238,12 +251,14 @@ def execute_code_and_capture_prints_last(
         stderr_data_full = ""
 
         try:
+            # Communicate with the process and get output
             stdout_data_full, stderr_data_full = process.communicate(timeout=timeout_seconds)
 
             json_data = None
             pre_json_stdout_str = ""
             post_json_stdout_str = ""
 
+            # Find the JSON block in the standard output
             start_idx = stdout_data_full.find(actual_start_marker_in_stream)
 
             if start_idx != -1:
@@ -275,6 +290,7 @@ def execute_code_and_capture_prints_last(
                         execution_error_log_lines.extend(unparsed_after_start_marker.strip().splitlines())
                     error_occurred_flag = True
             else:
+                # No JSON block found, treat all stdout as pre-JSON output
                 pre_json_stdout_str = stdout_data_full.strip()
 
             if pre_json_stdout_str:
@@ -306,7 +322,7 @@ def execute_code_and_capture_prints_last(
                     if status == "PASSED":
                         current_passed_details.extend(output_for_test)
                         if test_stdout or test_stderr or traceback_info:
-                            current_passed_details.append("-" * 20)
+                             current_passed_details.append("-" * 20)
                     else:
                         current_failed_errored_details.extend(output_for_test)
                         current_failed_errored_details.append("-" * 20)
@@ -325,6 +341,7 @@ def execute_code_and_capture_prints_last(
                     runner_summary_lines.extend(runner_summary_str.splitlines())
 
             if stderr_data_full and stderr_data_full.strip():
+                # Avoid printing stderr if it's just a copy of the runner summary (which can happen)
                 is_stderr_exact_summary = json_data and stderr_data_full.strip() == json_data.get("runner_summary", "").strip()
                 if not is_stderr_exact_summary:
                     subprocess_stderr_lines.append(f"\n--- Subprocess Standard Error (exit code: {process.returncode}) ---")
@@ -342,6 +359,7 @@ def execute_code_and_capture_prints_last(
                 # Check if the runner summary already indicates a test loading error
                 is_loader_error_in_summary = json_data and "Error: Failed to load test cases" in json_data.get("runner_summary", "")
 
+                # Log a generic warning if the exit code is non-zero without other obvious errors
                 if not (stderr_data_full.strip() or has_failures_in_json or is_loader_error_in_summary):
                     execution_error_log_lines.append(
                         f"--- Execution Warning: Process ended with non-zero exit code ({process.returncode}) but no apparent error output or JSON failures recorded ---")
@@ -351,10 +369,12 @@ def execute_code_and_capture_prints_last(
             process.kill()
             stdout_partial, stderr_partial = ("", "")
             try:
+                # Try to get any remaining output
                 stdout_partial, stderr_partial = process.communicate(timeout=1)
             except Exception:
-                pass
+                pass # Ignore errors during cleanup
 
+            # Log all partial output that was captured
             if stdout_data_full and stdout_data_full.strip():
                 execution_error_log_lines.append("--- Partial Standard Output before timeout (may be incomplete) ---")
                 execution_error_log_lines.extend(stdout_data_full.strip().splitlines())
@@ -373,6 +393,7 @@ def execute_code_and_capture_prints_last(
             error_occurred_flag = True
             execution_error_log_lines.append(
                 f"--- Error within main execution function ---\n{type(e).__name__}: {str(e)}\nDetailed Traceback:\n{traceback.format_exc()}")
+            # Log any captured output during the error
             if stdout_data_full and stdout_data_full.strip():
                 execution_error_log_lines.append("--- Captured Raw Standard Output (during error handling) ---")
                 execution_error_log_lines.extend(stdout_data_full.strip().splitlines())
@@ -388,10 +409,12 @@ def execute_code_and_capture_prints_last(
         execution_error_log_lines.append(
             f"--- Unexpected error in execution wrapper ---\n{type(e).__name__}: {str(e)}\nDetailed Traceback:\n{traceback.format_exc()}")
     finally:
+        # Clean up the temporary file
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
             except OSError as e:
+                # Write to actual stderr since this is a cleanup issue
                 sys.stderr.write(f"Warning: Failed to delete temporary file {temp_file_path}: {e}\n")
 
     # --- Assemble the output sections ---
@@ -411,7 +434,7 @@ def execute_code_and_capture_prints_last(
     if execution_error_log_lines: other_info_parts.extend(execution_error_log_lines)
     other_info_section_str = "\n".join(other_info_parts).strip()
 
-    # --- Assemble the combined display_output (for n_last_lines) ---
+    # --- Assemble the combined display_output (for n_last_lines truncation) ---
     display_output_lines = []
     if module_stdout_pre_json_lines: display_output_lines.extend(module_stdout_pre_json_lines)
     if passed_tests_detail_lines:
@@ -425,21 +448,23 @@ def execute_code_and_capture_prints_last(
     if module_stdout_post_json_lines: display_output_lines.extend(module_stdout_post_json_lines)
     if execution_error_log_lines: display_output_lines.extend(execution_error_log_lines)
 
+    # Clean up trailing separators and blank lines
     temp_combined_lines = [line for line in display_output_lines if line is not None]
     while temp_combined_lines and temp_combined_lines[-1].strip() == "-" * 20:
         temp_combined_lines.pop()
     while temp_combined_lines and not temp_combined_lines[-1].strip():
         temp_combined_lines.pop()
 
+    # Apply n_last_lines truncation if needed
     final_display_lines_for_truncation = temp_combined_lines
     if n_last_lines is not None and n_last_lines > 0 and len(final_display_lines_for_truncation) > n_last_lines:
         num_omitted = len(final_display_lines_for_truncation) - n_last_lines
         final_display_lines_for_truncation = [
-                                                 f"... ({num_omitted} lines of output omitted for brevity) ..."] + final_display_lines_for_truncation[
-                                                                                                        -n_last_lines:]
+             f"... ({num_omitted} lines of output omitted for brevity) ..."] + final_display_lines_for_truncation[-n_last_lines:]
 
     display_output_str = "\n".join(final_display_lines_for_truncation).strip()
 
+    # Provide a default message if no output was generated
     if not display_output_str and not error_occurred_flag:
         display_output_str = "Code executed successfully, but there was no test output or standard output."
     elif not display_output_str and error_occurred_flag:
