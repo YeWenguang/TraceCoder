@@ -94,7 +94,10 @@ TraceCoder/
 ### 1. Environment Setup
 ```bash
 # Install base dependencies
-pip install pandas transformers openai python-dotenv  # Includes dataset loading, model invocation, and environment variable management libraries
+pip install -r requirements.txt
+
+# For evaluating with the bigcodebench dataset, install additional dependencies
+pip install -r requirements-eval.txt
 ```
 
 ### 2. Configure Dataset Paths
