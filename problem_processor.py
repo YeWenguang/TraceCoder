@@ -1,18 +1,19 @@
+```python
 import re
 import time
 from itertools import islice
 import importlib 
 from typing import Callable 
 
-# 导入同级模块的函数
+# Import functions from sibling modules
 from config import DATASET_PATHS 
 from reporting import format_check_correctness_result
 from src.generation import generator 
-from src.traceRunner import execute_code_and_capture_prints_last # <<< 新增导入
-from src.postprocessing import remove_main_block # <<< 新增导入 for _parse_llm_response
+from src.traceRunner import execute_code_and_capture_prints_last  # <<< New import
+from src.postprocessing import remove_main_block  # <<< New import for _parse_llm_response
 
 
-# --- 辅助函数 ---
+# --- Helper Functions ---
 def _parse_llm_output(llm_response: str):
     """ 
     Parses the LLM's response string to extract the repair plan and 
@@ -64,12 +65,12 @@ def _parse_llm_output(llm_response: str):
 
 
 def _build_instrumentation_prompt(code_to_debug_next: str, instrumentation_suggestions: str, failure_info_for_instrumentation: str) -> str:
-    """构建用于代码插桩的提示。"""
+    """Builds the prompt for code instrumentation."""
     return f"""The Python code below failed tests. Add `print()` statements to trace its execution and variable states, focusing on areas related to the 'Test Failure Feedback'. 
  
  Key Instrumentation Rules: 
  
- 1.  Identify serveral logical blocks/steps in the code. 
+ 1.  Identify several logical blocks/steps in the code. 
  
  2.  For each block/step, print: 
  
@@ -113,7 +114,7 @@ def _build_instrumentation_prompt(code_to_debug_next: str, instrumentation_sugge
 
 
 def _get_failed_history_str(history: list) -> str:
-    """格式化历史失败记录。"""
+    """Formats historical failure records."""
     if not history:
         return "There have been no previous attempts to fix the failure for this specific problem instance."
 
@@ -130,7 +131,7 @@ def _get_failed_history_str(history: list) -> str:
 
 
 def _build_analysis_planning_prompt(problem_data, code_with_prints, captured_prints_output, history) -> str:
-    """构建两步法中第一步（分析与规划）的提示。"""
+    """Builds the prompt for the first step (analysis and planning) in the two-step method."""
     failed_attempts_feedback_str = _get_failed_history_str(history)
     return f"""You are a debugging assistant. 
  
@@ -206,7 +207,7 @@ def _build_analysis_planning_prompt(problem_data, code_with_prints, captured_pri
 
 
 def _build_code_implementation_prompt(problem_data, code_to_fix, captured_prints, repair_plan) -> str:
-    """构建两步法中第二步（代码实现）的提示。"""
+    """Builds the prompt for the second step (code implementation) in the two-step method."""
     return f"""You are a code generation assistant.
 You need to fix the following Python code based on the provided repair plan.
 
@@ -269,9 +270,10 @@ def _parse_implementation_output(response_text: str) -> str:
 
     return "" # Return empty string if no code is found
 
+
 def _load_check_correctness_func(dataset_name: str) -> Callable:
     """
-    根据数据集名称动态加载并返回相应的 check_correctness 函数。
+    Dynamically loads and returns the corresponding check_correctness function based on the dataset name.
     """
     try:
         module_path = DATASET_PATHS[dataset_name]["eval_module"]
@@ -286,28 +288,28 @@ def _load_check_correctness_func(dataset_name: str) -> Callable:
         raise ImportError(f"Could not import evaluation module '{module_path}': {e}. Ensure __init__.py files exist in package directories.")
 
 
-# --- 核心处理函数 ---
-def _run_direct_generation(problem_data, args, check_correctness_func_param: Callable): # 新增参数
-    """执行第一阶段：直接代码生成和评估。"""
+# --- Core Processing Functions ---
+def _run_direct_generation(problem_data, args, check_correctness_func_param: Callable): # New parameter
+    """Executes the first phase: direct code generation and evaluation."""
     prompt = problem_data.get('complete_prompt', '')
     generated_code, p_tokens, c_tokens = generator(prompt, "code3_generate", args.model)
-    # 使用传递进来的函数
+    # Use the passed-in function
     eval_result = check_correctness_func_param(problem_data, generated_code, args.timeout)
     return {"code": generated_code, "eval_result": eval_result, "prompt_tokens": p_tokens,
             "completion_tokens": c_tokens}
 
 
 def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_correctness_func_param: Callable):
-    """执行第二阶段：自调试循环 (已更新，包含完整逻辑)。"""
+    """Executes the second phase: self-debugging loop (updated to include complete logic)."""
     code_to_debug, last_eval, best_code, best_eval = initial_code, initial_eval, initial_code, initial_eval
     log, history, p_tokens, c_tokens, streak = [], [], 0, 0, 0
     instrumentation_suggestions = ""  # Initialize suggestions
 
     for attempt in range(1, args.max_debug_attempts + 1):
         print(
-            f"--- 调试尝试: {attempt}/{args.max_debug_attempts} | 最佳: {best_eval.get('passed_count', 0)}/{best_eval.get('total_count', 1)} ---")
+            f"--- Debug attempt: {attempt}/{args.max_debug_attempts} | Best: {best_eval.get('passed_count', 0)}/{best_eval.get('total_count', 1)} ---")
 
-        # 1. 插桩
+        # 1. Instrumentation
         captured_prints = "Instrumentation skipped or not applicable."
         instrumented_code = code_to_debug  # Default to original if instrumentation fails
         if not args.no_instrumentation:
@@ -322,7 +324,7 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
                     instrumented_code + "\n\n" + problem_data.get('test', ''), timeout_seconds=args.timeout)
                 captured_prints = exec_result.get('display_output', 'No instrumentation output captured.')
 
-        # 2. 分析和规划 (This is now the unified first step)
+        # 2. Analysis and Planning (This is now the unified first step)
         analysis_prompt = _build_analysis_planning_prompt(problem_data, instrumented_code, captured_prints, history)
         llm_response, p, c = generator(analysis_prompt, "code4_generate", args.model)
         p_tokens, c_tokens = p_tokens + p, c_tokens + c
@@ -330,7 +332,7 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
         repair_plan, instrumentation_suggestions = _parse_llm_output(llm_response)
         candidate_code = ""
 
-        # 3. 代码实现 (This is the unified second step, skipped if no plan)
+        # 3. Code Implementation (This is the unified second step, skipped if no plan)
         if repair_plan and repair_plan.strip():
             # The two-step repair is now the default if a plan is returned.
             # The `no_two_step_repair` flag is implicitly handled by whether a plan is generated.
@@ -342,16 +344,16 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
         else:
             # If there's no repair plan, we can't proceed with implementation.
             # This also handles the "one-step" case where the analysis prompt might not return a plan.
-            print("LLM 未提供修复计划，终止调试。")
+            print("LLM did not provide a repair plan, terminating debugging.")
             break
 
-        # 3. 评估和决策
+        # 3. Evaluation and decision-making
         if not candidate_code.strip():
-            print("LLM 未提供有效代码，终止调试。");
+            print("LLM did not provide valid code, terminating debugging.");
             break
 
-        eval_candidate = check_correctness_func_param(problem_data, candidate_code, args.timeout) # 使用传递进来的函数
-        print(f"候选修复结果: {format_check_correctness_result(eval_candidate)}")
+        eval_candidate = check_correctness_func_param(problem_data, candidate_code, args.timeout) # Use the passed-in function
+        print(f"Candidate repair result: {format_check_correctness_result(eval_candidate)}")
 
         attempt_log = {"attempt": attempt, "plan": plan, "eval_result": eval_candidate}
         log.append(attempt_log)
@@ -367,20 +369,20 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
 
         history.append(attempt_log)
         if streak >= args.max_no_improvement_streak:
-            print(f"连续 {streak} 次无改进，终止调试。");
+            print(f"{streak} consecutive attempts with no improvement, terminating debugging.");
             break
 
     return {"final_code": best_code, "final_eval": best_eval, "session_log": log, "prompt_tokens": p_tokens,
             "completion_tokens": c_tokens}
 
 
-# `process_problem` 函数保持不变，因为它只是调用上面的核心函数
-def process_problem(problem_data, task_id, args, check_correctness_func_param: Callable): # 新增参数
-    # (此函数无需修改，从上一版本复制即可)
-    print(f"\n{'=' * 25} 正在处理问题: {task_id} {'=' * 25}")
+# The `process_problem` function remains unchanged as it only calls the core functions above
+def process_problem(problem_data, task_id, args, check_correctness_func_param: Callable): # New parameter
+    # (This function does not need modification; it is copied from the previous version)
+    print(f"\n{'=' * 25} Processing problem: {task_id} {'=' * 25}")
     start_time = time.time()
 
-    gen_res = _run_direct_generation(problem_data, args, check_correctness_func_param) # 传递参数
+    gen_res = _run_direct_generation(problem_data, args, check_correctness_func_param) # Pass parameter
 
     result = {
         "task_id": task_id, "model": args.model, "dataset": args.dataset,
@@ -393,12 +395,12 @@ def process_problem(problem_data, task_id, args, check_correctness_func_param: C
     total_p, total_c = gen_res["prompt_tokens"], gen_res["completion_tokens"]
 
     if result["direct_gen_passed"]:
-        print("直接生成成功通过。")
+        print("Direct generation passed successfully.")
         result.update({"final_code": gen_res["code"], "final_eval": gen_res["eval_result"], "final_passed": True,
                        "stopped_reason": "Passed on direct generation"})
     else:
-        print("直接生成失败，进入自调试阶段。")
-        debug_res = _run_self_debugging(gen_res["code"], gen_res["eval_result"], problem_data, args, check_correctness_func_param) # 传递参数
+        print("Direct generation failed, entering self-debugging phase.")
+        debug_res = _run_self_debugging(gen_res["code"], gen_res["eval_result"], problem_data, args, check_correctness_func_param) # Pass parameter
         result.update({
             "final_code": debug_res["final_code"], "final_eval": debug_res["final_eval"],
             "final_passed": debug_res["final_eval"].get("passed", False),
@@ -410,5 +412,5 @@ def process_problem(problem_data, task_id, args, check_correctness_func_param: C
     result.update({"total_prompt_tokens": total_p, "total_completion_tokens": total_c,
                    "processing_time_seconds": time.time() - start_time})
 
-    print(f"问题 {task_id} 处理完毕。最终结果: {'通过' if result['final_passed'] else '失败'}")
+    print(f"Problem {task_id} processing completed. Final result: {'Passed' if result['final_passed'] else 'Failed'}")
     return result
