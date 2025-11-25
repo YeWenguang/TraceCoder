@@ -348,7 +348,7 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
 
         # 3. Evaluation and decision-making
         if not candidate_code.strip():
-            print("LLM did not provide valid code, terminating debugging.");
+            print("LLM did not provide valid code, terminating debugging.")
             break
 
         eval_candidate = check_correctness_func_param(problem_data, candidate_code, args.timeout) # Use the passed-in function
@@ -358,7 +358,7 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
         log.append(attempt_log)
 
         if eval_candidate.get('passed'):
-            best_code, best_eval = candidate_code, eval_candidate;
+            best_code, best_eval = candidate_code, eval_candidate
             break
 
         if eval_candidate.get('passed_count', 0) > best_eval.get('passed_count', 0):
@@ -368,7 +368,7 @@ def _run_self_debugging(initial_code, initial_eval, problem_data, args, check_co
 
         history.append(attempt_log)
         if streak >= args.max_no_improvement_streak:
-            print(f"{streak} consecutive attempts with no improvement, terminating debugging.");
+            print(f"{streak} consecutive attempts with no improvement, terminating debugging.")
             break
 
     return {"final_code": best_code, "final_eval": best_eval, "session_log": log, "prompt_tokens": p_tokens,
